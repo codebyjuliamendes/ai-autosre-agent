@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoSRE | AI DevOps Agent</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="header">
+        <h1>AutoSRE >_</h1>
+        <div class="controls">
+            <button id="btn-reset" class="btn secondary">Reset Environment</button>
+            <button id="btn-resolve" class="btn primary">Auto-Resolve Incident</button>
+        </div>
+    </div>
+    <div class="container">
+        <div class="panel left-panel">
+            <div class="panel-header">
+                <h2>SERVER_HEALTH_MONITOR</h2>
+                <div class="status-indicator"></div>
+            </div>
+            <div class="metrics">
+                <div class="metric-card" id="card-cpu">
+                    <h3>CPU USAGE</h3>
+                    <div class="value" id="val-cpu">99%</div>
+                    <div class="bar-container"><div class="bar" id="bar-cpu"></div></div>
+                </div>
+                <div class="metric-card" id="card-status">
+                    <h3>NGINX STATUS</h3>
+                    <div class="value" id="val-status">500 Internal Server Error</div>
+                </div>
+                <div class="metric-card">
+                    <h3>PROCESSES</h3>
+                    <ul id="process-list" class="process-list"></ul>
+                </div>
+                <div class="metric-card">
+                    <h3>SERVICES</h3>
+                    <ul id="service-list" class="service-list"></ul>
+                </div>
+            </div>
+        </div>
+        <div class="panel right-panel">
+            <div class="panel-header">
+                <h2>AGENT_TERMINAL</h2>
+                <div class="terminal-dots">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                </div>
+            </div>
+            <div class="terminal-body" id="terminal-output">
+                <div class="log system">Awaiting manual intervention or AutoSRE trigger...</div>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
