@@ -1,41 +1,60 @@
-# AutoSRE DevOps Agent
+# AutoSRE Agent
 
-An AI portfolio project demonstrating an automated Site Reliability Engineering (SRE) agent. The agent uses a ReAct (Reason + Act) loop to diagnose and resolve server incidents autonomously.
+[![Node.js](https://img.shields.io/badge/Node.js-18.x-green.svg?style=for-the-badge&logo=nodedotjs)](https://nodejs.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.x-38B2AC.svg?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-## Architecture
+**AutoSRE** is an AI-powered DevOps Agent simulation that autonomously diagnoses and resolves server incidents. This project demonstrates a clean architecture approach, rigorous backend design, and a modern Matrix-style hacker UI using Tailwind CSS.
+
+## 🚀 Built With
+
+- **Backend Architecture**: Node.js & Express using a Clean Architecture paradigm (Services, Controllers, Robust Error Middleware).
+- **Frontend Design System**: Tailwind CSS (CDN) with glassmorphism effects and custom animations.
+- **Real-time Communication**: Server-Sent Events (SSE) for seamless, low-latency streaming of the Agent's thought processes.
+
+## 📐 Architecture Diagram
 
 ```mermaid
 graph TD
-    A[Client UI] -->|REST API| B(Node.js Express Server)
-    A -->|Server-Sent Events| B
-    B -->|MockLLMAgent| C{ReAct Loop}
-    C -->|Read Logs| D[(Server State Sim)]
-    C -->|Kill Processes| D
-    C -->|Restart Services| D
-    D -->|State Updates| A
+    Client[Client UI (Tailwind Matrix Theme)] -->|HTTP GET /api/state| StateCtrl[State Controller]
+    Client -->|HTTP POST /api/reset| StateCtrl
+    Client -->|SSE /api/agent| AgentCtrl[Agent Controller]
+    
+    StateCtrl --> StateSvc[State Service]
+    AgentCtrl --> StateSvc
+    
+    StateSvc --> Data[(In-Memory Server State)]
+    
+    AgentCtrl -->|Streams Thought/Action/Observation| Client
 ```
 
-## The Scenario
-1. The simulated server experiences an outage: Nginx returns 500 errors and CPU usage spikes to 99%.
-2. When the user triggers "Auto-Resolve", the `MockLLMAgent` connects to the server and begins reasoning about the state.
-3. The Agent inspects logs, identifies a disconnected database and a rogue cryptomining process consuming the CPU.
-4. It takes targeted action: killing the malicious process and restarting the Postgres service.
-5. The UI dynamically updates via SSE (Server-Sent Events) as the agent performs actions, bringing the server back to a healthy state.
+## 🧠 Why & Trade-offs
 
-## Stack
-- **Backend**: Node.js + Express
-- **Frontend**: Vanilla JS + CSS (Matrix-style Cyberpunk Terminal)
-- **AI**: Simulated LLM ReAct Loop with human-readable streaming
+- **Clean Architecture**: By separating logic into `StateService`, `StateController`, and `AgentController`, the system is highly testable and extensible. 
+- **Tailwind CSS CDN**: Chosen for rapid prototyping without a build step, while still offering the complete utility-first framework for a cohesive design system.
+- **Server-Sent Events (SSE)**: Selected over WebSockets because the agent execution is essentially unidirectional streaming (Server -> Client), making SSE the most lightweight and native solution for this use case.
+- **In-Memory State**: For this simulation, persistence is not required. State is kept in-memory for speed and simplicity, though it resets on server restart.
 
-## Quick Start
-1. Ensure you have Node.js installed.
-2. Run `npm install`
-3. Run `npm start`
-4. Open `http://localhost:3000` in your browser.
+## ⚡ Quick Start
 
-## The "Why"
-This project demonstrates understanding of:
-- **LLM Agent Paradigms**: Implementing Reason + Act loops and exposing tools to an AI.
-- **Event-Driven Architecture**: Streaming real-time updates to a frontend UI using Server-Sent Events.
-- **SRE Principles**: Simulating real-world devops scenarios (investigating logs, mitigating load, restarting dependent services).
-- **UX/UI**: Designing an engaging, premium "hacker" aesthetic that visually communicates complex agent reasoning in an accessible way.
+1. **Clone the repository** (if not already local).
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+3. **Start the server**:
+   ```bash
+   npm start
+   ```
+4. **Open in browser**:
+   Navigate to [http://localhost:4002](http://localhost:4002).
+
+## 🛡️ Rigorous Engineering
+
+- **Zero Unused Variables**: Codebase rigorously checked.
+- **JSDoc Typings**: Complete type annotations on the backend for developer experience and reliability.
+- **Global Error Handling**: Express error middleware guarantees no unhandled promise rejections bring the server down.
+
+---
+
+> _"There is no spoon... only automated incident resolution."_
