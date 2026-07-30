@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  agent:
+    build: .
+    ports:
+      - "4002:4002"
+    environment:
+      - PORT=4002
+    restart: unless-stopped
