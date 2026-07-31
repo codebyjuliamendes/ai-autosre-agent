@@ -1,0 +1,89 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "AutoSRE DevOps Agent API",
+    "version": "1.0.0",
+    "description": "API documentation for the AutoSRE DevOps Agent"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4002"
+    }
+  ],
+  "paths": {
+    "/api/state": {
+      "get": {
+        "summary": "Get current state",
+        "responses": {
+          "200": {
+            "description": "Current server state retrieved successfully"
+          }
+        }
+      }
+    },
+    "/api/reset": {
+      "post": {
+        "summary": "Reset state to nominal",
+        "responses": {
+          "200": {
+            "description": "State reset successfully"
+          }
+        }
+      }
+    },
+    "/api/chaos": {
+      "post": {
+        "summary": "Inject chaos into the system",
+        "responses": {
+          "200": {
+            "description": "Chaos successfully injected"
+          }
+        }
+      }
+    },
+    "/api/agent": {
+      "get": {
+        "summary": "Run agent loop via Server-Sent Events (SSE)",
+        "responses": {
+          "200": {
+            "description": "Event stream connection established"
+          }
+        }
+      }
+    },
+    "/api/agent/approve": {
+      "post": {
+        "summary": "Approve or reject a pending agent action",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Pending action ID"
+                  },
+                  "approved": {
+                    "type": "boolean",
+                    "description": "Approval status"
+                  }
+                },
+                "required": ["id", "approved"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval processed successfully"
+          },
+          "400": {
+            "description": "No such pending action or already resolved"
+          }
+        }
+      }
+    }
+  }
+}

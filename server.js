@@ -292,6 +292,28 @@ class StateController {
 }
 
 // Routes
+app.get('/api-docs', (req, res) => {
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
+  <title>API Documentation</title>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = () => {
+      window.ui = SwaggerUIBundle({
+        url: '/swagger.json',
+        dom_id: '#swagger-ui',
+      });
+    };
+  </script>
+</body>
+</html>`);
+});
+
 app.get('/api/state', StateController.getState);
 app.post('/api/reset', StateController.resetState);
 app.post('/api/chaos', StateController.triggerChaos);

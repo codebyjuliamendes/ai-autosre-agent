@@ -21,6 +21,12 @@ With **V3 Advanced Features**, the agent now operates with enterprise-grade safe
 3. **Human-In-The-Loop (HITL) Validation**: Before any action modifies the system, the agent halts and prompts the operator. UI provides dynamic "Approve" / "Reject" controls integrated with a state machine to resume or kill the agent.
 4. **Chaos Engineering Trigger**: Intentionally inject severe production failures via the `/api/chaos` endpoint to test the agent's incident response in a safe, contained environment.
 
+## 🚢 V4 Upgrades (Enterprise Grade)
+
+1. **Kubernetes Orchestration (`k8s/`)**: Fully declarative configurations including Deployments (with resource limits and health probes), Services, and Ingress routing via NGINX.
+2. **CI/CD Pipelines (`.github/workflows/`)**: Automated GitHub Actions workflow to validate Node.js builds, run unit tests, and perform simulated Docker container builds on every push/PR to main.
+3. **Swagger API Documentation (`/api-docs`)**: Interactive OpenAPI 3.0 specification exposed via Swagger UI for developers and SREs to explore the agent control plane endpoints.
+
 ## 📐 Architecture Diagram
 
 ```mermaid
