@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoSRE | AI DevOps Agent</title>
+    <title>AutoSRE | AI DevOps Agent (V3 Upgraded)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
     <script>
@@ -18,7 +18,8 @@
                             black: '#0d0d0d',
                             green: '#00ff41',
                             darkgreen: '#008f11',
-                            red: '#ff003c'
+                            red: '#ff003c',
+                            orange: '#ff8c00'
                         }
                     }
                 }
@@ -31,6 +32,7 @@
         .log-action { color: #008f11; font-weight: bold; }
         .log-observation { color: #00ff41; }
         .log-system { color: #ff003c; }
+        .log-approval { color: #ff8c00; }
         
         /* Glassmorphism effects */
         .glass-panel {
@@ -44,9 +46,10 @@
 </head>
 <body class="min-h-screen flex flex-col p-6">
     <header class="flex justify-between items-center mb-8 border-b border-matrix-green pb-4">
-        <h1 class="text-3xl font-bold tracking-wider animate-pulse">AutoSRE >_</h1>
+        <h1 class="text-3xl font-bold tracking-wider animate-pulse">AutoSRE >_ <span class="text-xs text-matrix-darkgreen">v3</span></h1>
         <div class="flex gap-4">
-            <button id="btn-reset" class="px-4 py-2 border border-matrix-green text-matrix-green hover:bg-matrix-green hover:text-black transition-colors duration-300">Reset Environment</button>
+            <button id="btn-chaos" class="px-4 py-2 border border-matrix-red text-matrix-red hover:bg-matrix-red hover:text-black transition-colors duration-300"><i data-lucide="bomb" class="inline w-4 h-4 mr-1"></i>Trigger Chaos</button>
+            <button id="btn-reset" class="px-4 py-2 border border-matrix-green text-matrix-green hover:bg-matrix-green hover:text-black transition-colors duration-300">Reset Env (Nominal)</button>
             <button id="btn-resolve" class="px-4 py-2 bg-matrix-green text-black font-bold hover:bg-white hover:text-black transition-colors duration-300">Auto-Resolve Incident</button>
         </div>
     </header>
@@ -56,21 +59,21 @@
         <section class="glass-panel p-6 rounded-lg flex flex-col gap-6">
             <div class="flex justify-between items-center border-b border-matrix-green/30 pb-2">
                 <h2 class="text-xl font-semibold flex items-center gap-2"><i data-lucide="activity" class="w-5 h-5"></i> SERVER_HEALTH_MONITOR</h2>
-                <div class="w-3 h-3 rounded-full status-indicator bg-matrix-red animate-ping" id="status-indicator"></div>
+                <div class="w-3 h-3 rounded-full status-indicator bg-matrix-green shadow-[0_0_10px_#00ff41]" id="status-indicator"></div>
             </div>
             
             <div class="grid grid-cols-2 gap-4">
                 <div class="border border-matrix-green/30 p-4 rounded bg-black/50">
                     <h3 class="text-sm text-matrix-green/70 mb-2">CPU USAGE</h3>
-                    <div class="text-3xl font-bold text-matrix-red mb-2" id="val-cpu">99%</div>
+                    <div class="text-3xl font-bold text-matrix-green mb-2" id="val-cpu">10%</div>
                     <div class="w-full bg-gray-800 rounded-full h-2">
-                        <div class="bg-matrix-red h-2 rounded-full transition-all duration-500" id="bar-cpu" style="width: 99%"></div>
+                        <div class="bg-matrix-green h-2 rounded-full transition-all duration-500" id="bar-cpu" style="width: 10%"></div>
                     </div>
                 </div>
                 
                 <div class="border border-matrix-green/30 p-4 rounded bg-black/50">
                     <h3 class="text-sm text-matrix-green/70 mb-2">NGINX STATUS</h3>
-                    <div class="text-xl font-bold text-matrix-red mt-2" id="val-status">500 Internal Server Error</div>
+                    <div class="text-xl font-bold text-matrix-green mt-2" id="val-status">200 OK</div>
                 </div>
             </div>
 
@@ -90,14 +93,14 @@
         <!-- Right Panel: Terminal -->
         <section class="glass-panel p-0 rounded-lg flex flex-col overflow-hidden">
             <div class="bg-black/80 px-4 py-2 border-b border-matrix-green/30 flex justify-between items-center">
-                <h2 class="text-sm font-semibold text-matrix-green/80 flex items-center gap-2"><i data-lucide="terminal" class="w-4 h-4"></i> AGENT_TERMINAL bash</h2>
+                <h2 class="text-sm font-semibold text-matrix-green/80 flex items-center gap-2"><i data-lucide="terminal" class="w-4 h-4"></i> AGENT_TERMINAL bash (HITL Active)</h2>
                 <div class="flex gap-2">
                     <div class="w-3 h-3 rounded-full bg-matrix-red"></div>
                     <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
                     <div class="w-3 h-3 rounded-full bg-matrix-green"></div>
                 </div>
             </div>
-            <div class="p-4 flex-1 overflow-y-auto font-mono text-sm space-y-2 bg-black/60 relative" id="terminal-output">
+            <div class="p-4 flex-1 overflow-y-auto font-mono text-sm space-y-2 bg-black/60 relative pb-20" id="terminal-output">
                 <div id="boot-skeleton" class="hidden absolute inset-0 bg-black/80 flex flex-col gap-2 p-4 animate-pulse">
                     <div class="h-4 bg-gray-700 rounded w-3/4"></div>
                     <div class="h-4 bg-gray-700 rounded w-1/2"></div>

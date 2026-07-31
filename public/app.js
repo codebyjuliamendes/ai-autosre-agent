@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const btnResolve = document.getElementById('btn-resolve');
     const btnReset = document.getElementById('btn-reset');
+    const btnChaos = document.getElementById('btn-chaos');
     const terminal = document.getElementById('terminal-output');
     const bootSkeleton = document.getElementById('boot-skeleton');
     
@@ -46,25 +47,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resetEnvironment() {
+        closeAgent();
+        fetch('/api/reset', { method: 'POST' })
+            .then(() => fetchState())
+            .then(() => {
+                showToast("Environment reset to nominal state", "success");
+            })
+            .catch(err => console.error("Error resetting state:", err));
+    }
+
+    function triggerChaos() {
+        closeAgent();
+        fetch('/api/chaos', { method: 'POST' })
+            .then(() => fetchState())
+            .then(() => {
+                showToast("Chaos engineering triggered! System failing.", "success");
+            })
+            .catch(err => console.error("Error triggering chaos:", err));
+    }
+    
+    function closeAgent() {
         if(eventSource) {
             eventSource.close();
             eventSource = null;
         }
-        
         Array.from(terminal.children).forEach(c => {
             if (c.id !== 'boot-skeleton') c.remove();
         });
-        appendLog('system', 'Environment reset. Awaiting manual intervention or AutoSRE trigger...');
-        
-        fetch('/api/reset', { method: 'POST' })
-            .then(() => fetchState())
-            .then(() => {
-                btnResolve.disabled = false;
-                btnResolve.textContent = "Auto-Resolve Incident";
-                btnResolve.className = "px-4 py-2 bg-matrix-green text-black font-bold hover:bg-white hover:text-black transition-colors duration-300";
-                showToast("Environment reset successfully", "success");
-            })
-            .catch(err => console.error("Error resetting state:", err));
+        appendLog('system', 'System ready. Awaiting manual intervention or AutoSRE trigger...');
+        btnResolve.disabled = false;
+        btnResolve.textContent = "Auto-Resolve Incident";
+        btnResolve.className = "px-4 py-2 bg-matrix-green text-black font-bold hover:bg-white hover:text-black transition-colors duration-300";
     }
 
     function updateUI(state) {
@@ -120,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         bootSkeleton.classList.remove('hidden');
-        showToast("Booting AutoSRE Agent...", "info");
+        showToast("Booting AutoSRE Agent v3...", "info");
         
         setTimeout(() => {
             bootSkeleton.classList.add('hidden');
@@ -135,14 +148,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = JSON.parse(e.data);
                 updateUI(data);
             });
+            
+            eventSource.addEventListener('pending_action', (e) => {
+                const data = JSON.parse(e.data);
+                appendPendingAction(data.id, data.command);
+            });
 
             eventSource.addEventListener('error', () => {
                 eventSource.close();
-                btnResolve.textContent = "Incident Resolved";
-                btnResolve.className = "px-4 py-2 bg-matrix-green text-black font-bold";
-                showToast("Incident Resolved Successfully", "success");
+                btnResolve.disabled = false;
+                btnResolve.textContent = "Auto-Resolve Incident";
+                btnResolve.className = "px-4 py-2 bg-matrix-green text-black font-bold hover:bg-white hover:text-black transition-colors duration-300";
             });
         }, 1500);
+    }
+    
+    function approveAction(id, approved, container) {
+        // disable buttons
+        container.innerHTML = `<span class="text-matrix-orange italic">Action ${approved ? 'Approved' : 'Rejected'} by operator.</span>`;
+        fetch('/api/agent/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, approved })
+        }).catch(e => console.error(e));
+    }
+
+    function appendPendingAction(id, command) {
+        const div = document.createElement('div');
+        div.className = `log-approval my-2 p-3 border border-matrix-orange/50 bg-matrix-orange/10 rounded flex flex-col gap-2`;
+        
+        div.innerHTML = `
+            <div class="flex items-center gap-2">
+                <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                <strong>[HITL] Pending Action:</strong> <code>${command}</code>
+            </div>
+            <div class="flex gap-3 mt-1 action-btns">
+                <button class="btn-approve px-3 py-1 bg-matrix-green/20 text-matrix-green border border-matrix-green hover:bg-matrix-green hover:text-black transition-colors text-xs">Approve</button>
+                <button class="btn-reject px-3 py-1 bg-matrix-red/20 text-matrix-red border border-matrix-red hover:bg-matrix-red hover:text-black transition-colors text-xs">Reject</button>
+            </div>
+        `;
+        terminal.appendChild(div);
+        lucide.createIcons({ root: div });
+        
+        div.querySelector('.btn-approve').addEventListener('click', () => approveAction(id, true, div));
+        div.querySelector('.btn-reject').addEventListener('click', () => approveAction(id, false, div));
+        
+        terminal.scrollTop = terminal.scrollHeight;
     }
 
     function appendLog(type, text) {
@@ -152,16 +203,16 @@ document.addEventListener('DOMContentLoaded', () => {
         let iconHtml = '';
         let prefix = '';
         if (type === 'thought') {
-            iconHtml = '<i data-lucide="brain" class="w-4 h-4 mt-0.5"></i>';
+            iconHtml = '<i data-lucide="brain" class="w-4 h-4 mt-0.5 text-gray-400"></i>';
             prefix = '[Thought]';
         } else if (type === 'action') {
-            iconHtml = '<i data-lucide="zap" class="w-4 h-4 mt-0.5"></i>';
+            iconHtml = '<i data-lucide="zap" class="w-4 h-4 mt-0.5 text-matrix-green"></i>';
             prefix = '[Action]';
         } else if (type === 'observation') {
-            iconHtml = '<i data-lucide="eye" class="w-4 h-4 mt-0.5"></i>';
+            iconHtml = '<i data-lucide="eye" class="w-4 h-4 mt-0.5 text-matrix-green"></i>';
             prefix = '[Observation]';
         } else {
-            iconHtml = '<i data-lucide="settings" class="w-4 h-4 mt-0.5"></i>';
+            iconHtml = '<i data-lucide="settings" class="w-4 h-4 mt-0.5 text-matrix-red"></i>';
             prefix = '[System]';
         }
                        
@@ -172,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     btnReset.addEventListener('click', resetEnvironment);
+    btnChaos.addEventListener('click', triggerChaos);
     btnResolve.addEventListener('click', startAgent);
 
     // Initial load
