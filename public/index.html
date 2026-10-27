@@ -1,123 +1,107 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoSRE | AI DevOps Agent (V3 Upgraded)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        mono: ['"Fira Code"', 'monospace'],
-                    },
-                    colors: {
-                        matrix: {
-                            black: '#0d0d0d',
-                            green: '#00ff41',
-                            darkgreen: '#008f11',
-                            red: '#ff003c',
-                            orange: '#ff8c00'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #0d0d0d; color: #00ff41; font-family: 'Fira Code', monospace; }
-        .log-thought { color: #888; font-style: italic; }
-        .log-action { color: #008f11; font-weight: bold; }
-        .log-observation { color: #00ff41; }
-        .log-system { color: #ff003c; }
-        .log-approval { color: #ff8c00; }
-        
-        /* Glassmorphism effects */
-        .glass-panel {
-            background: rgba(0, 40, 0, 0.1);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border: 1px solid rgba(0, 255, 65, 0.2);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-        }
-    </style>
-</head>
-<body class="min-h-screen flex flex-col p-6">
-    <header class="flex justify-between items-center mb-8 border-b border-matrix-green pb-4">
-        <h1 class="text-3xl font-bold tracking-wider animate-pulse">AutoSRE >_ <span class="text-xs text-matrix-darkgreen">v3</span></h1>
-        <div class="flex gap-4">
-            <button id="btn-chaos" class="px-4 py-2 border border-matrix-red text-matrix-red hover:bg-matrix-red hover:text-black transition-colors duration-300"><i data-lucide="bomb" class="inline w-4 h-4 mr-1"></i>Trigger Chaos</button>
-            <button id="btn-reset" class="px-4 py-2 border border-matrix-green text-matrix-green hover:bg-matrix-green hover:text-black transition-colors duration-300">Reset Env (Nominal)</button>
-            <button id="btn-resolve" class="px-4 py-2 bg-matrix-green text-black font-bold hover:bg-white hover:text-black transition-colors duration-300">Auto-Resolve Incident</button>
-        </div>
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>AutoSRE | SRE Agent Simulator</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="theme.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#terminal">Skip to agent terminal</a>
+    <header class="topbar">
+      <h1 class="brand">AutoSRE <span class="brand-cursor" aria-hidden="true">&gt;_</span> <small>v4</small></h1>
+      <div class="controls" role="group" aria-label="Environment and agent controls">
+        <label class="field">
+          <span>Mode</span>
+          <select id="mode-select" aria-describedby="mode-help">
+            <option value="dry-run">Dry-run (simulated)</option>
+            <option value="execute">Execute</option>
+          </select>
+        </label>
+        <button id="btn-chaos" type="button" class="btn btn-danger">Trigger chaos</button>
+        <button id="btn-reset" type="button" class="btn">Reset environment</button>
+        <button id="btn-resolve" type="button" class="btn btn-primary">Run agent</button>
+        <button id="btn-theme" type="button" class="btn btn-ghost" aria-pressed="false">Light theme</button>
+      </div>
     </header>
-    
-    <main class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <!-- Left Panel: Metrics -->
-        <section class="glass-panel p-6 rounded-lg flex flex-col gap-6">
-            <div class="flex justify-between items-center border-b border-matrix-green/30 pb-2">
-                <h2 class="text-xl font-semibold flex items-center gap-2"><i data-lucide="activity" class="w-5 h-5"></i> SERVER_HEALTH_MONITOR</h2>
-                <div class="w-3 h-3 rounded-full status-indicator bg-matrix-green shadow-[0_0_10px_#00ff41]" id="status-indicator"></div>
-            </div>
-            
-            <div class="grid grid-cols-2 gap-4">
-                <div class="border border-matrix-green/30 p-4 rounded bg-black/50">
-                    <h3 class="text-sm text-matrix-green/70 mb-2">CPU USAGE</h3>
-                    <div class="text-3xl font-bold text-matrix-green mb-2" id="val-cpu">10%</div>
-                    <div class="w-full bg-gray-800 rounded-full h-2">
-                        <div class="bg-matrix-green h-2 rounded-full transition-all duration-500" id="bar-cpu" style="width: 10%"></div>
-                    </div>
-                </div>
-                
-                <div class="border border-matrix-green/30 p-4 rounded bg-black/50">
-                    <h3 class="text-sm text-matrix-green/70 mb-2">NGINX STATUS</h3>
-                    <div class="text-xl font-bold text-matrix-green mt-2" id="val-status">200 OK</div>
-                </div>
-            </div>
+    <p id="mode-help" class="mode-help">
+      Dry-run applies the agent's commands to a copy of the environment. Execute changes the simulated environment.
+      Destructive commands always need your approval.
+    </p>
 
-            <div class="grid grid-cols-2 gap-4 flex-1">
-                <div class="border border-matrix-green/30 p-4 rounded bg-black/50 overflow-y-auto max-h-64">
-                    <h3 class="text-sm text-matrix-green/70 mb-2 border-b border-matrix-green/20 pb-1">PROCESSES</h3>
-                    <ul id="process-list" class="space-y-2 mt-2 text-sm"></ul>
-                </div>
-                
-                <div class="border border-matrix-green/30 p-4 rounded bg-black/50 overflow-y-auto max-h-64">
-                    <h3 class="text-sm text-matrix-green/70 mb-2 border-b border-matrix-green/20 pb-1">SERVICES</h3>
-                    <ul id="service-list" class="space-y-2 mt-2 text-sm"></ul>
-                </div>
-            </div>
-        </section>
+    <form id="token-form" class="token-form" hidden>
+      <label class="field">
+        <span>Operator token</span>
+        <input id="token-input" type="password" autocomplete="off" spellcheck="false" />
+      </label>
+      <button type="submit" class="btn">Save token</button>
+      <span class="hint">Kept only in this browser tab (sessionStorage).</span>
+    </form>
 
-        <!-- Right Panel: Terminal -->
-        <section class="glass-panel p-0 rounded-lg flex flex-col overflow-hidden">
-            <div class="bg-black/80 px-4 py-2 border-b border-matrix-green/30 flex justify-between items-center">
-                <h2 class="text-sm font-semibold text-matrix-green/80 flex items-center gap-2"><i data-lucide="terminal" class="w-4 h-4"></i> AGENT_TERMINAL bash (HITL Active)</h2>
-                <div class="flex gap-2">
-                    <div class="w-3 h-3 rounded-full bg-matrix-red"></div>
-                    <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
-                    <div class="w-3 h-3 rounded-full bg-matrix-green"></div>
-                </div>
+    <div id="banner" class="banner" role="alert" hidden></div>
+
+    <main class="layout">
+      <section class="panel" aria-labelledby="health-title">
+        <div class="panel-head">
+          <h2 id="health-title">Server health</h2>
+          <span id="status-indicator" class="dot dot-ok" role="img" aria-label="Healthy"></span>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>CPU usage</h3>
+            <p class="metric" id="val-cpu">--</p>
+            <div
+              class="bar"
+              role="progressbar"
+              aria-label="CPU usage"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              id="bar-cpu-wrap"
+            >
+              <div class="bar-fill" id="bar-cpu"></div>
             </div>
-            <div class="p-4 flex-1 overflow-y-auto font-mono text-sm space-y-2 bg-black/60 relative pb-20" id="terminal-output">
-                <div id="boot-skeleton" class="hidden absolute inset-0 bg-black/80 flex flex-col gap-2 p-4 animate-pulse">
-                    <div class="h-4 bg-gray-700 rounded w-3/4"></div>
-                    <div class="h-4 bg-gray-700 rounded w-1/2"></div>
-                    <div class="h-4 bg-gray-700 rounded w-5/6"></div>
-                    <div class="mt-4 flex gap-2">
-                        <i data-lucide="loader" class="w-5 h-5 animate-spin text-matrix-green"></i>
-                        <span class="text-matrix-green">Booting AutoSRE Agent...</span>
-                    </div>
-                </div>
-                <div class="log-system">Awaiting manual intervention or AutoSRE trigger...</div>
-            </div>
-        </section>
+          </div>
+          <div class="card">
+            <h3>Nginx status</h3>
+            <p class="metric metric-sm" id="val-status">--</p>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card scroll">
+            <h3>Processes</h3>
+            <ul id="process-list" class="list" aria-live="polite"></ul>
+          </div>
+          <div class="card scroll">
+            <h3>Services</h3>
+            <ul id="service-list" class="list" aria-live="polite"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel terminal-panel" aria-labelledby="terminal-title">
+        <div class="panel-head">
+          <h2 id="terminal-title">Agent terminal</h2>
+          <span id="run-status" class="badge">idle</span>
+        </div>
+        <div id="terminal" class="terminal" role="log" aria-live="polite" tabindex="0">
+          <p class="log log-system">Awaiting operator. Trigger chaos, then run the agent.</p>
+        </div>
+      </section>
+
+      <section class="panel audit-panel" aria-labelledby="audit-title">
+        <div class="panel-head">
+          <h2 id="audit-title">Audit trail</h2>
+          <button id="btn-audit" type="button" class="btn btn-ghost btn-sm">Refresh</button>
+        </div>
+        <ol id="audit-list" class="audit-list"></ol>
+      </section>
     </main>
 
-    <div id="toast-container" class="fixed bottom-4 right-4 flex flex-col gap-2 z-[9999]"></div>
-
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <div id="toast-container" class="toasts" aria-live="polite"></div>
     <script src="app.js"></script>
-</body>
+  </body>
 </html>

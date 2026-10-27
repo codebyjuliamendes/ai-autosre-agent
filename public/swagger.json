@@ -1,59 +1,142 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.0.3",
   "info": {
-    "title": "AutoSRE DevOps Agent API",
-    "version": "1.0.0",
-    "description": "API documentation for the AutoSRE DevOps Agent"
+    "title": "AutoSRE Agent API",
+    "version": "4.0.0",
+    "description": "Control plane of the AutoSRE simulator. When OPERATOR_TOKEN is configured, write endpoints and the audit trail require `Authorization: Bearer <token>`."
   },
-  "servers": [
-    {
-      "url": "http://localhost:4002"
+  "servers": [{ "url": "/" }],
+  "components": {
+    "securitySchemes": { "operatorToken": { "type": "http", "scheme": "bearer" } },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": { "code": { "type": "string" }, "message": { "type": "string" } },
+            "required": ["code", "message"]
+          }
+        }
+      },
+      "State": {
+        "type": "object",
+        "properties": {
+          "cpu": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "status": { "type": "string", "example": "200 OK" },
+          "processes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "pid": { "type": "integer" }, "name": { "type": "string" }, "cpu": { "type": "integer" } }
+            }
+          },
+          "logs": { "type": "object", "additionalProperties": { "type": "string" } },
+          "services": { "type": "object", "additionalProperties": { "type": "string", "enum": ["running", "stopped"] } }
+        }
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "mode": { "type": "string", "enum": ["dry-run", "execute"] },
+          "planner": { "type": "string", "enum": ["rule-based", "llm"] },
+          "status": {
+            "type": "string",
+            "enum": ["running", "awaiting_approval", "completed", "failed", "rejected", "cancelled", "timed_out"]
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "finishedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "pendingAction": {
+            "type": "object",
+            "nullable": true,
+            "properties": { "id": { "type": "string", "format": "uuid" }, "command": { "type": "string" } }
+          },
+          "steps": { "type": "integer" }
+        }
+      }
+    },
+    "responses": {
+      "Error": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
     }
-  ],
+  },
   "paths": {
+    "/healthz": { "get": { "summary": "Liveness probe", "responses": { "200": { "description": "Process is alive" } } } },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness probe",
+        "responses": { "200": { "description": "Ready" }, "503": { "description": "Shutting down" } }
+      }
+    },
+    "/api/config": {
+      "get": { "summary": "Public agent configuration (mode, policy, planner)", "responses": { "200": { "description": "OK" } } }
+    },
     "/api/state": {
       "get": {
-        "summary": "Get current state",
+        "summary": "Current simulated environment",
         "responses": {
-          "200": {
-            "description": "Current server state retrieved successfully"
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/State" } } } }
         }
       }
     },
     "/api/reset": {
       "post": {
-        "summary": "Reset state to nominal",
-        "responses": {
-          "200": {
-            "description": "State reset successfully"
-          }
-        }
+        "summary": "Reset the environment to nominal (cancels the active run)",
+        "security": [{ "operatorToken": [] }],
+        "responses": { "200": { "description": "OK" }, "401": { "$ref": "#/components/responses/Error" }, "429": { "$ref": "#/components/responses/Error" } }
       }
     },
     "/api/chaos": {
       "post": {
-        "summary": "Inject chaos into the system",
-        "responses": {
-          "200": {
-            "description": "Chaos successfully injected"
-          }
-        }
+        "summary": "Inject a failure scenario (cancels the active run)",
+        "security": [{ "operatorToken": [] }],
+        "responses": { "200": { "description": "OK" }, "401": { "$ref": "#/components/responses/Error" }, "429": { "$ref": "#/components/responses/Error" } }
       }
     },
-    "/api/agent": {
-      "get": {
-        "summary": "Run agent loop via Server-Sent Events (SSE)",
-        "responses": {
-          "200": {
-            "description": "Event stream connection established"
-          }
-        }
-      }
-    },
-    "/api/agent/approve": {
+    "/api/agent/runs": {
       "post": {
-        "summary": "Approve or reject a pending agent action",
+        "summary": "Start an agent run (dry-run by default)",
+        "security": [{ "operatorToken": [] }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": { "mode": { "type": "string", "enum": ["dry-run", "execute"] } } }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Run started", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Run" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/agent/runs/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": {
+        "summary": "Run summary",
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Run" } } } },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/agent/runs/{id}/events": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": {
+        "summary": "Server-Sent Events stream of the run",
+        "description": "Events: `message` {type: system|thought|action|observation, text}, `pending_action` {id, command, tool, args, destructive, mode, expiresAt}, `action_resolved` {id, approved}, `update` (State, execute mode only), `end` {status, reason}. Supports `Last-Event-ID` to resume.",
+        "responses": { "200": { "description": "text/event-stream" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/agent/runs/{id}/approve": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "post": {
+        "summary": "Approve or reject the pending action of a run",
+        "security": [{ "operatorToken": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -61,28 +144,61 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "Pending action ID"
-                  },
-                  "approved": {
-                    "type": "boolean",
-                    "description": "Approval status"
-                  }
+                  "actionId": { "type": "string", "format": "uuid" },
+                  "approved": { "type": "boolean" },
+                  "operator": { "type": "string", "maxLength": 64, "description": "Name recorded in the audit trail" }
                 },
-                "required": ["id", "approved"]
+                "required": ["actionId", "approved"]
               }
             }
           }
         },
         "responses": {
-          "200": {
-            "description": "Approval processed successfully"
-          },
-          "400": {
-            "description": "No such pending action or already resolved"
-          }
+          "200": { "description": "Decision recorded" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" }
         }
+      }
+    },
+    "/api/agent/runs/{id}/cancel": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "post": {
+        "summary": "Cancel a run",
+        "security": [{ "operatorToken": [] }],
+        "responses": { "200": { "description": "Run summary after cancellation" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/agent/approve": {
+      "post": {
+        "deprecated": true,
+        "summary": "Legacy (v3) approval of the active run's pending action",
+        "security": [{ "operatorToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "id": { "type": "string", "format": "uuid" }, "approved": { "type": "boolean" } },
+                "required": ["id", "approved"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Decision recorded" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "summary": "Audit trail (most recent last)",
+        "security": [{ "operatorToken": [] }],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100 } },
+          { "name": "runId", "in": "query", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "200": { "description": "OK" }, "401": { "$ref": "#/components/responses/Error" } }
       }
     }
   }

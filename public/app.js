@@ -1,231 +1,379 @@
+'use strict';
+
+// All dynamic content is rendered with textContent / DOM APIs (never innerHTML)
+// so log lines, process names or LLM output cannot inject markup.
 document.addEventListener('DOMContentLoaded', () => {
-    const btnResolve = document.getElementById('btn-resolve');
-    const btnReset = document.getElementById('btn-reset');
-    const btnChaos = document.getElementById('btn-chaos');
-    const terminal = document.getElementById('terminal-output');
-    const bootSkeleton = document.getElementById('boot-skeleton');
-    
-    // UI Elements
-    const valCpu = document.getElementById('val-cpu');
-    const barCpu = document.getElementById('bar-cpu');
-    const valStatus = document.getElementById('val-status');
-    const processList = document.getElementById('process-list');
-    const serviceList = document.getElementById('service-list');
-    const statusIndicator = document.getElementById('status-indicator');
+  const $ = (id) => document.getElementById(id);
+  const btnResolve = $('btn-resolve');
+  const btnReset = $('btn-reset');
+  const btnChaos = $('btn-chaos');
+  const btnTheme = $('btn-theme');
+  const btnAudit = $('btn-audit');
+  const modeSelect = $('mode-select');
+  const terminal = $('terminal');
+  const runStatus = $('run-status');
+  const banner = $('banner');
+  const tokenForm = $('token-form');
+  const tokenInput = $('token-input');
 
-    let eventSource = null;
+  const TOKEN_KEY = 'autosre-operator-token';
+  const THEME_KEY = 'autosre-theme';
+  const ACTIVE_STATUSES = new Set(['running', 'awaiting_approval']);
 
-    // Initialize Icons
-    lucide.createIcons();
+  let eventSource = null;
+  let currentRunId = null;
+  let busy = false;
 
-    function showToast(message, type = 'success') {
-        const container = document.getElementById('toast-container');
-        if (!container) return;
-        const toast = document.createElement('div');
-        const icon = type === 'success' ? 'check-circle' : 'info';
-        toast.className = `glass-panel text-white px-4 py-3 rounded shadow-lg flex items-center gap-3 transform transition-all duration-300 translate-y-10 opacity-0`;
-        toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5 ${type === 'success' ? 'text-matrix-green' : 'text-blue-400'}"></i> <span>${message}</span>`;
-        
-        container.appendChild(toast);
-        lucide.createIcons({ root: toast });
-        
-        requestAnimationFrame(() => {
-            toast.classList.remove('translate-y-10', 'opacity-0');
+  // ---------- helpers ----------
+  const storage = {
+    get(area, key) {
+      try {
+        return window[area].getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set(area, key, value) {
+      try {
+        window[area].setItem(key, value);
+      } catch {
+        /* storage unavailable */
+      }
+    },
+  };
+
+  function el(tag, opts = {}, children = []) {
+    const node = document.createElement(tag);
+    if (opts.className) node.className = opts.className;
+    if (opts.text !== undefined) node.textContent = String(opts.text);
+    for (const [k, v] of Object.entries(opts.attrs || {})) node.setAttribute(k, v);
+    for (const child of children) node.append(child);
+    return node;
+  }
+
+  function showToast(message, isError = false) {
+    const toast = el('div', {
+      className: `toast${isError ? ' is-error' : ''}`,
+      text: message,
+      attrs: { role: 'status' },
+    });
+    $('toast-container').append(toast);
+    setTimeout(() => toast.remove(), 3500);
+  }
+
+  function showBanner(message) {
+    banner.textContent = message;
+    banner.hidden = !message;
+  }
+
+  async function api(path, options = {}) {
+    const headers = { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}) };
+    const token = storage.get('sessionStorage', TOKEN_KEY);
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(path, { ...options, headers });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = (data && data.error && data.error.message) || `Request failed (HTTP ${res.status})`;
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  function reportError(err) {
+    if (err.status === 401) {
+      tokenForm.hidden = false;
+      tokenInput.focus();
+    }
+    showToast(err.message, true);
+  }
+
+  function setBusy(value) {
+    busy = value;
+    const running = Boolean(currentRunId);
+    btnResolve.disabled = busy || running;
+    btnReset.disabled = busy;
+    btnChaos.disabled = busy;
+    modeSelect.disabled = busy || running;
+    btnResolve.textContent = running ? 'Agent running...' : 'Run agent';
+  }
+
+  function setRunStatus(text) {
+    runStatus.textContent = text;
+  }
+
+  // ---------- environment ----------
+  function renderState(state) {
+    const bad = !String(state.status).startsWith('200');
+    const cpu = Math.max(0, Math.min(100, Number(state.cpu) || 0));
+    $('val-cpu').textContent = `${cpu}%`;
+    $('val-cpu').classList.toggle('is-bad', cpu > 80);
+    $('bar-cpu').style.width = `${cpu}%`;
+    $('bar-cpu').classList.toggle('is-bad', cpu > 80);
+    $('bar-cpu-wrap').setAttribute('aria-valuenow', String(cpu));
+
+    $('val-status').textContent = state.status;
+    $('val-status').classList.toggle('is-bad', bad);
+    const dot = $('status-indicator');
+    dot.className = `dot ${bad ? 'dot-bad' : 'dot-ok'}`;
+    dot.setAttribute('aria-label', bad ? 'Unhealthy' : 'Healthy');
+
+    const procs = Array.isArray(state.processes) ? state.processes : [];
+    $('process-list').replaceChildren(
+      ...(procs.length
+        ? procs.map((p) =>
+            el('li', {}, [el('span', { text: p.name }), el('span', { className: 'meta', text: `PID ${p.pid}` })]),
+          )
+        : [el('li', { className: 'empty', text: 'No processes' })]),
+    );
+
+    const services = Object.entries(state.services || {});
+    $('service-list').replaceChildren(
+      ...(services.length
+        ? services.map(([name, status]) =>
+            el('li', {}, [
+              el('span', { text: name }),
+              el('span', { className: `pill${status === 'running' ? '' : ' is-bad'}`, text: status }),
+            ]),
+          )
+        : [el('li', { className: 'empty', text: 'No services' })]),
+    );
+  }
+
+  async function fetchState() {
+    try {
+      renderState(await api('/api/state'));
+      showBanner('');
+    } catch (err) {
+      showBanner(`Could not load server state: ${err.message}`);
+    }
+  }
+
+  async function envAction(path, successMessage) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const data = await api(path, { method: 'POST' });
+      closeStream();
+      renderState(data.state);
+      clearTerminal('Environment changed. Awaiting operator.');
+      showToast(successMessage);
+      loadAudit();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---------- terminal ----------
+  const PREFIX = { thought: '[Thought]', action: '[Action]', observation: '[Observation]', system: '[System]' };
+
+  function appendLog(type, text) {
+    const kind = PREFIX[type] ? type : 'system';
+    const line = el('p', { className: `log log-${kind}` }, [el('strong', { text: PREFIX[kind] }), String(text)]);
+    terminal.append(line);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function clearTerminal(message) {
+    terminal.replaceChildren();
+    if (message) appendLog('system', message);
+  }
+
+  function appendPendingAction(action) {
+    const approve = el('button', { className: 'btn btn-primary btn-sm', text: 'Approve', attrs: { type: 'button' } });
+    const reject = el('button', { className: 'btn btn-danger btn-sm', text: 'Reject', attrs: { type: 'button' } });
+    const expires = new Date(action.expiresAt);
+    const card = el(
+      'div',
+      { className: 'approval', attrs: { 'data-action-id': action.id, role: 'group', 'aria-label': 'Pending action' } },
+      [
+        el('p', { className: 'log' }, [
+          el('strong', { text: action.destructive ? '[Approval required: destructive]' : '[Approval required]' }),
+          el('code', { text: action.command }),
+        ]),
+        el('p', {
+          className: 'hint',
+          text: `Mode: ${action.mode}. Auto-rejects at ${Number.isNaN(expires.getTime()) ? '?' : expires.toLocaleTimeString()}.`,
+        }),
+        el('div', { className: 'actions' }, [approve, reject]),
+      ],
+    );
+    terminal.append(card);
+    terminal.scrollTop = terminal.scrollHeight;
+    approve.focus({ preventScroll: true });
+
+    const decide = async (approved) => {
+      approve.disabled = true;
+      reject.disabled = true;
+      try {
+        await api(`/api/agent/runs/${encodeURIComponent(currentRunId)}/approve`, {
+          method: 'POST',
+          body: JSON.stringify({ actionId: action.id, approved }),
         });
+      } catch (err) {
+        reportError(err);
+        approve.disabled = false;
+        reject.disabled = false;
+      }
+    };
+    approve.addEventListener('click', () => decide(true));
+    reject.addEventListener('click', () => decide(false));
+  }
 
-        setTimeout(() => {
-            toast.classList.add('translate-y-10', 'opacity-0');
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
-    }
+  function resolvePendingCard(data) {
+    const card = terminal.querySelector(`[data-action-id="${CSS.escape(data.id)}"]`);
+    if (!card) return;
+    const actions = card.querySelector('.actions');
+    if (actions) actions.replaceWith(el('p', { className: 'hint', text: data.approved ? 'Approved.' : 'Rejected.' }));
+  }
 
-    function fetchState() {
-        fetch('/api/state')
-            .then(res => res.json())
-            .then(state => updateUI(state))
-            .catch(err => console.error("Error fetching state:", err));
-    }
+  function closeStream() {
+    if (eventSource) eventSource.close();
+    eventSource = null;
+    currentRunId = null;
+    setRunStatus('idle');
+    setBusy(false);
+  }
 
-    function resetEnvironment() {
-        closeAgent();
-        fetch('/api/reset', { method: 'POST' })
-            .then(() => fetchState())
-            .then(() => {
-                showToast("Environment reset to nominal state", "success");
-            })
-            .catch(err => console.error("Error resetting state:", err));
+  function parse(e) {
+    try {
+      return JSON.parse(e.data);
+    } catch {
+      return null;
     }
+  }
 
-    function triggerChaos() {
-        closeAgent();
-        fetch('/api/chaos', { method: 'POST' })
-            .then(() => fetchState())
-            .then(() => {
-                showToast("Chaos engineering triggered! System failing.", "success");
-            })
-            .catch(err => console.error("Error triggering chaos:", err));
-    }
-    
-    function closeAgent() {
-        if(eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
-        Array.from(terminal.children).forEach(c => {
-            if (c.id !== 'boot-skeleton') c.remove();
+  function openStream(runId) {
+    currentRunId = runId;
+    setBusy(false);
+    setRunStatus('running');
+    eventSource = new EventSource(`/api/agent/runs/${encodeURIComponent(runId)}/events`);
+    eventSource.addEventListener('message', (e) => {
+      const data = parse(e);
+      if (data) appendLog(data.type, data.text);
+    });
+    eventSource.addEventListener('update', (e) => {
+      const data = parse(e);
+      if (data) renderState(data);
+    });
+    eventSource.addEventListener('pending_action', (e) => {
+      const data = parse(e);
+      if (!data) return;
+      setRunStatus('awaiting approval');
+      appendPendingAction(data);
+    });
+    eventSource.addEventListener('action_resolved', (e) => {
+      const data = parse(e);
+      if (!data) return;
+      setRunStatus('running');
+      resolvePendingCard(data);
+    });
+    eventSource.addEventListener('end', (e) => {
+      const data = parse(e) || {};
+      closeStream();
+      setRunStatus(data.status || 'finished');
+      fetchState();
+      loadAudit();
+    });
+    eventSource.addEventListener('error', () => {
+      // EventSource reconnects on its own (resuming via Last-Event-ID). Only give
+      // up when the run is gone or already finished.
+      if (!currentRunId) return;
+      api(`/api/agent/runs/${encodeURIComponent(runId)}`)
+        .then((run) => {
+          if (!ACTIVE_STATUSES.has(run.status)) {
+            closeStream();
+            setRunStatus(run.status);
+          }
+        })
+        .catch(() => {
+          closeStream();
+          appendLog('system', 'Lost connection to the agent run.');
         });
-        appendLog('system', 'System ready. Awaiting manual intervention or AutoSRE trigger...');
-        btnResolve.disabled = false;
-        btnResolve.textContent = "Auto-Resolve Incident";
-        btnResolve.className = "px-4 py-2 bg-matrix-green text-black font-bold hover:bg-white hover:text-black transition-colors duration-300";
+    });
+  }
+
+  async function startAgent() {
+    if (busy || currentRunId) return;
+    setBusy(true);
+    clearTerminal('');
+    try {
+      const run = await api('/api/agent/runs', { method: 'POST', body: JSON.stringify({ mode: modeSelect.value }) });
+      openStream(run.id);
+    } catch (err) {
+      reportError(err);
+      appendLog('system', `Could not start the agent: ${err.message}`);
+      setBusy(false);
     }
+  }
 
-    function updateUI(state) {
-        // CPU
-        valCpu.textContent = state.cpu + '%';
-        barCpu.style.width = state.cpu + '%';
-        if (state.cpu > 80) {
-            valCpu.className = 'text-3xl font-bold text-matrix-red mb-2';
-            barCpu.className = 'bg-matrix-red h-2 rounded-full transition-all duration-500';
-        } else {
-            valCpu.className = 'text-3xl font-bold text-matrix-green mb-2';
-            barCpu.className = 'bg-matrix-green h-2 rounded-full transition-all duration-500';
-        }
-
-        // Status
-        valStatus.textContent = state.status;
-        if (state.status.includes('500')) {
-            valStatus.className = 'text-xl font-bold text-matrix-red mt-2';
-            statusIndicator.className = 'w-3 h-3 rounded-full status-indicator bg-matrix-red animate-ping';
-        } else {
-            valStatus.className = 'text-xl font-bold text-matrix-green mt-2';
-            statusIndicator.className = 'w-3 h-3 rounded-full status-indicator bg-matrix-green shadow-[0_0_10px_#00ff41]';
-        }
-
-        // Processes
-        processList.innerHTML = state.processes.map(p => 
-            `<li class="flex justify-between items-center py-1 border-b border-matrix-green/10">
-                <span class="text-gray-300">${p.name}</span>
-                <span class="text-xs text-matrix-green/50">PID: ${p.pid}</span>
-             </li>`
-        ).join('');
-
-        // Services
-        serviceList.innerHTML = Object.entries(state.services).map(([name, status]) => {
-            const isRunning = status === 'running';
-            const badgeClass = isRunning 
-                ? 'bg-matrix-green/20 text-matrix-green border-matrix-green/50' 
-                : 'bg-matrix-red/20 text-matrix-red border-matrix-red/50';
-            return `<li class="flex justify-between items-center py-1 border-b border-matrix-green/10">
-                        <span class="text-gray-300">${name}</span> 
-                        <span class="text-xs px-2 py-0.5 rounded border ${badgeClass}">${status}</span>
-                    </li>`;
-        }).join('');
+  // ---------- audit ----------
+  async function loadAudit() {
+    const list = $('audit-list');
+    try {
+      const { entries } = await api('/api/audit?limit=50');
+      list.replaceChildren(
+        ...(entries.length
+          ? entries
+              .slice()
+              .reverse()
+              .map((e) => {
+                const command = e.details && e.details.command ? ` ${e.details.command.tool}` : '';
+                const operator = e.details && e.details.operator ? ` by ${e.details.operator}` : '';
+                return el('li', { text: `${new Date(e.ts).toLocaleTimeString()} ${e.event}${command}${operator}` });
+              })
+          : [el('li', { className: 'empty', text: 'No audit entries yet.' })]),
+      );
+    } catch (err) {
+      list.replaceChildren(el('li', { className: 'empty', text: `Audit unavailable: ${err.message}` }));
     }
+  }
 
-    function startAgent() {
-        btnResolve.disabled = true;
-        btnResolve.textContent = "Agent Running...";
-        btnResolve.className = "px-4 py-2 border border-matrix-green text-matrix-green opacity-50 cursor-not-allowed";
-        
-        Array.from(terminal.children).forEach(c => {
-            if (c.id !== 'boot-skeleton') c.remove();
-        });
-        
-        bootSkeleton.classList.remove('hidden');
-        showToast("Booting AutoSRE Agent v3...", "info");
-        
-        setTimeout(() => {
-            bootSkeleton.classList.add('hidden');
-            eventSource = new EventSource('/api/agent');
-            
-            eventSource.addEventListener('message', (e) => {
-                const data = JSON.parse(e.data);
-                appendLog(data.type, data.text);
-            });
+  // ---------- theme & config ----------
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    btnTheme.setAttribute('aria-pressed', String(theme === 'light'));
+    btnTheme.textContent = theme === 'light' ? 'Dark theme' : 'Light theme';
+  }
 
-            eventSource.addEventListener('update', (e) => {
-                const data = JSON.parse(e.data);
-                updateUI(data);
-            });
-            
-            eventSource.addEventListener('pending_action', (e) => {
-                const data = JSON.parse(e.data);
-                appendPendingAction(data.id, data.command);
-            });
-
-            eventSource.addEventListener('error', () => {
-                eventSource.close();
-                btnResolve.disabled = false;
-                btnResolve.textContent = "Auto-Resolve Incident";
-                btnResolve.className = "px-4 py-2 bg-matrix-green text-black font-bold hover:bg-white hover:text-black transition-colors duration-300";
-            });
-        }, 1500);
+  async function loadConfig() {
+    try {
+      const config = await api('/api/config');
+      modeSelect.value = config.defaultMode;
+      const execute = modeSelect.querySelector('option[value="execute"]');
+      if (!config.allowExecute && execute) {
+        execute.disabled = true;
+        execute.textContent = 'Execute (disabled on server)';
+        modeSelect.value = 'dry-run';
+      }
+      if (config.authRequired) tokenForm.hidden = false;
+    } catch (err) {
+      showBanner(`Could not load configuration: ${err.message}`);
     }
-    
-    function approveAction(id, approved, container) {
-        // disable buttons
-        container.innerHTML = `<span class="text-matrix-orange italic">Action ${approved ? 'Approved' : 'Rejected'} by operator.</span>`;
-        fetch('/api/agent/approve', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, approved })
-        }).catch(e => console.error(e));
-    }
+  }
 
-    function appendPendingAction(id, command) {
-        const div = document.createElement('div');
-        div.className = `log-approval my-2 p-3 border border-matrix-orange/50 bg-matrix-orange/10 rounded flex flex-col gap-2`;
-        
-        div.innerHTML = `
-            <div class="flex items-center gap-2">
-                <i data-lucide="shield-alert" class="w-4 h-4"></i>
-                <strong>[HITL] Pending Action:</strong> <code>${command}</code>
-            </div>
-            <div class="flex gap-3 mt-1 action-btns">
-                <button class="btn-approve px-3 py-1 bg-matrix-green/20 text-matrix-green border border-matrix-green hover:bg-matrix-green hover:text-black transition-colors text-xs">Approve</button>
-                <button class="btn-reject px-3 py-1 bg-matrix-red/20 text-matrix-red border border-matrix-red hover:bg-matrix-red hover:text-black transition-colors text-xs">Reject</button>
-            </div>
-        `;
-        terminal.appendChild(div);
-        lucide.createIcons({ root: div });
-        
-        div.querySelector('.btn-approve').addEventListener('click', () => approveAction(id, true, div));
-        div.querySelector('.btn-reject').addEventListener('click', () => approveAction(id, false, div));
-        
-        terminal.scrollTop = terminal.scrollHeight;
-    }
+  tokenForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    storage.set('sessionStorage', TOKEN_KEY, tokenInput.value.trim());
+    tokenInput.value = '';
+    showToast('Token saved for this tab.');
+    loadAudit();
+  });
+  btnTheme.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    storage.set('localStorage', THEME_KEY, next);
+    applyTheme(next);
+  });
+  btnReset.addEventListener('click', () => envAction('/api/reset', 'Environment reset to nominal state.'));
+  btnChaos.addEventListener('click', () => envAction('/api/chaos', 'Chaos injected: the system is failing.'));
+  btnResolve.addEventListener('click', startAgent);
+  btnAudit.addEventListener('click', loadAudit);
 
-    function appendLog(type, text) {
-        const div = document.createElement('div');
-        div.className = `log-${type} mb-1 opacity-0 animate-[fadeIn_0.5s_forwards] flex items-start gap-2`;
-        
-        let iconHtml = '';
-        let prefix = '';
-        if (type === 'thought') {
-            iconHtml = '<i data-lucide="brain" class="w-4 h-4 mt-0.5 text-gray-400"></i>';
-            prefix = '[Thought]';
-        } else if (type === 'action') {
-            iconHtml = '<i data-lucide="zap" class="w-4 h-4 mt-0.5 text-matrix-green"></i>';
-            prefix = '[Action]';
-        } else if (type === 'observation') {
-            iconHtml = '<i data-lucide="eye" class="w-4 h-4 mt-0.5 text-matrix-green"></i>';
-            prefix = '[Observation]';
-        } else {
-            iconHtml = '<i data-lucide="settings" class="w-4 h-4 mt-0.5 text-matrix-red"></i>';
-            prefix = '[System]';
-        }
-                       
-        div.innerHTML = `${iconHtml} <span><strong>${prefix}</strong> ${text}</span>`;
-        terminal.appendChild(div);
-        lucide.createIcons({ root: div });
-        terminal.scrollTop = terminal.scrollHeight;
-    }
-
-    btnReset.addEventListener('click', resetEnvironment);
-    btnChaos.addEventListener('click', triggerChaos);
-    btnResolve.addEventListener('click', startAgent);
-
-    // Initial load
-    fetchState();
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+  loadConfig();
+  fetchState();
+  loadAudit();
 });
