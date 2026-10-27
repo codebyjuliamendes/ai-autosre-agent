@@ -2,8 +2,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ai-autosre-agent
+  labels:
+    app: ai-autosre-agent
 spec:
-  replicas: 2
+  # The simulated environment, agent runs and pending approvals live in memory:
+  # more than one replica would give each pod its own state. Keep a single replica.
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: ai-autosre-agent
@@ -12,27 +18,64 @@ spec:
       labels:
         app: ai-autosre-agent
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 20
       containers:
-      - name: app
-        image: ai-autosre-agent:latest
-        ports:
-        - containerPort: 4002
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "250m"
-            memory: "256Mi"
-        readinessProbe:
-          httpGet:
-            path: /api/state
-            port: 4002
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /api/state
-            port: 4002
-          initialDelaySeconds: 15
-          periodSeconds: 20
+        - name: app
+          # Replace with your registry image and an immutable tag (avoid :latest).
+          image: ai-autosre-agent:4.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4002
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: TRUST_PROXY
+              value: '1'
+            - name: OPERATOR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ai-autosre-agent
+                  key: operator-token
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

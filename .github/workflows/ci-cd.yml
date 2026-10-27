@@ -1,28 +1,62 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ['main']
   pull_request:
-    branches: [ "main" ]
+    branches: ['main']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  test:
+    name: Lint, typecheck and test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: ['22', '24']
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-    
-    - name: Install dependencies
-      run: npm install
-    
-    - name: Run tests
-      run: npm test || echo "No tests specified, skipping"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
 
-    - name: Validate Dockerfile (Simulated Build)
-      run: docker build -t ai-autosre-agent:test .
+  docker:
+    name: Docker build and smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t ai-autosre-agent:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name autosre -p 4002:4002 --read-only --tmpfs /tmp ai-autosre-agent:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' autosre)
+            [ "$status" = "healthy" ] && break
+            sleep 2
+          done
+          docker inspect -f '{{.State.Health.Status}}' autosre | grep -q healthy
+          curl -fsS http://localhost:4002/healthz
+          curl -fsS http://localhost:4002/api/state | grep -q '"status"'
+          curl -fsS -X POST http://localhost:4002/api/chaos | grep -q 'Chaos injected'
+          curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:4002/api/agent/runs | grep -q '"mode":"dry-run"'
+          test "$(docker exec autosre id -u)" != "0"
+      - name: Container logs
+        if: always()
+        run: docker logs autosre || true

@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log*
+.git
+.github
+.env
+.env.*
+!.env.example
+coverage
+test
+k8s
+*.md
+Dockerfile
+docker-compose.yml
+.DS_Store
